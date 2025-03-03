@@ -1,0 +1,57 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'docker.io/library/node:18-alpine'
+        CONTAINER_NAME = 'angular-build'
+    }
+
+    stages {
+        stage('Clonar repositorio') {
+            steps {
+                git url: 'https://github.com/ajpardos/hola-mundo-angular.git', branch: 'main'
+            }
+        }
+
+        stage('Build Angular en contenedor Podman') {
+            steps {
+                sh '''
+                    podman rm -f ${CONTAINER_NAME} || true
+                    
+                    podman run --name ${CONTAINER_NAME} \
+                        -v "$PWD":/app \
+                        -w /app \
+                        ${IMAGE_NAME} \
+                        sh -c "
+                            npm install -g @angular/cli && \
+                            npm install && \
+                            ng build --configuration production
+                        "
+                '''
+            }
+        }
+
+        stage('Preparar artefactos') {
+            steps {
+                sh '''
+                    # Copiar el build a una carpeta artefactos (opcional)
+                    mkdir -p artifacts
+                    cp -r dist/* artifacts/
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'podman rm -f ${CONTAINER_NAME} || true'
+        }
+        success {
+            archiveArtifacts artifacts: 'artifacts/**', fingerprint: true
+            echo '✅ Build completado y artefactos guardados'
+        }
+        failure {
+            echo '❌ Falló el build'
+        }
+    }
+}
